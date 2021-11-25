@@ -107,6 +107,7 @@ def get_patients(connection):
 
 
 def get_meds(connection, diag):
+    meds = []
     try:
         with connection.cursor(buffered=True) as cursor:
             query_get_diag_id = f"""SELECT idDIAGNOSIS FROM `DIAGNOSIS`
@@ -118,11 +119,11 @@ def get_meds(connection, diag):
                     WHERE `idDIAGNOSIS` = {diag_id}"""
             cursor.execute(query_get_meds_id)
             meds_ids = []
-            (records,) = cursor.fetchall()
+            records = cursor.fetchall()
             for val in records:
-                meds_ids.append(val)
+                print(f"val={val}")
+                meds_ids.append(val[0])
 
-            meds = []
             for med_id in meds_ids:
                 query_get_med_name = f"""SELECT `Medicine name` FROM `MEDICINE`
                             WHERE `idMEDICINE` = {med_id}"""
@@ -146,9 +147,9 @@ def get_procedures(connection, diag):
                     WHERE `idDIAGNOSIS` = {diag_id}"""
             cursor.execute(query_get_procedure_id)
             procedure_ids = []
-            (records,) = cursor.fetchall()
+            records = cursor.fetchall()
             for val in records:
-                procedure_ids.append(val)
+                procedure_ids.append(val[0])
 
             procedures = []
             for procedure_id in procedure_ids:
@@ -254,7 +255,7 @@ def cant_fire_doctor():
 def fire_doc_clicked(conn, doc):
     doc_id = get_id(doc.get())
     query_has_patients = f"""SELECT `idPATIENT` FROM `PATIENT-DIAGNOSIS`
-    WHERE `idDOCTOR` = {doc_id})"""
+    WHERE `idDOCTOR` = {doc_id}"""
     patients = []
 
     try:
@@ -341,53 +342,50 @@ def add_patient_btn_clicked(conn, p_info1, p_info2, p_info3, p_info4, p_info5, p
     if p_stay == 'Yes' and not free_beds(conn, p_diag):
         no_free_beds_warning()
         p_stay = 'No'
-    try:
-        query_is_in_db =f"""SELECT IFNULL((SELECT `idPATIENT` FROM `PATIENT`
-        WHERE `Full name` = '{p_name}' AND `Date of birth` = '{p_birth}'), 'null')"""
-        with conn.cursor(buffered=True) as cursor:
-            cursor.execute(query_is_in_db)
-            ((p_in_db,),) = cursor.fetchall()
+
+    query_is_in_db =f"""SELECT IFNULL((SELECT `idPATIENT` FROM `PATIENT`
+    WHERE `Full name` = '{p_name}' AND `Date of birth` = '{p_birth}'), 'null')"""
+    with conn.cursor(buffered=True) as cursor:
+        cursor.execute(query_is_in_db)
+        ((p_in_db,),) = cursor.fetchall()
+        conn.commit()
+
+    if p_in_db == 'null':
+        query_patient = f"""INSERT INTO `PATIENT`
+        (`Full name`, `Date of birth`)
+        VALUES ('{p_name}', '{p_birth}')
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(query_patient)
+            conn.commit()
+    query_get_patient_id = f"""SELECT idPATIENT FROM `PATIENT`
+    WHERE `Full name` = '{p_name}'
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query_get_patient_id)
+        ((p_id,),) = cursor.fetchall()
+        conn.commit()
+    query_patient_doc = f"""INSERT INTO `PATIENT-DIAGNOSIS`
+    (`idPATIENT`, `idDIAGNOSIS`, `Start of treatment`, `Is staying`, `idDOCTOR`, `Condition`)
+    VALUES ({p_id}, {get_id(p_diag)}, '{datetime.date.today()}', '{p_stay}', {get_id(p_doc)}, '{p_cond}')
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query_patient_doc)
+        conn.commit()
+    if p_stay == 'Yes':
+        query_get_dep = f"""SELECT `idDEPARTMENT` FROM `DIAGNOSIS`
+        WHERE `idDIAGNOSIS` = {get_id(p_diag)}"""
+        with conn.cursor() as cursor:
+            cursor.execute(query_get_dep)
+            ((dep_id,),) = cursor.fetchall()
+            conn.commit()
+        query_change_beds = f"""UPDATE `DEPARTMENT`
+        SET `Number of beds` = `Number of beds` - 1
+        WHERE `idDEPARTMENT` = {dep_id}"""
+        with conn.cursor() as cursor:
+            cursor.execute(query_change_beds)
             conn.commit()
 
-        if p_in_db == 'null':
-            query_patient = f"""INSERT INTO `PATIENT`
-            (`Full name`, `Date of birth`)
-            VALUES ('{p_name}', '{p_birth}')
-            """
-            with conn.cursor() as cursor:
-                cursor.execute(query_patient)
-                conn.commit()
-        query_get_patient_id = f"""SELECT idPATIENT FROM `PATIENT`
-        WHERE `Full name` = '{p_name}'
-        """
-        with conn.cursor() as cursor:
-            cursor.execute(query_get_patient_id)
-            ((p_id,),) = cursor.fetchall()
-            conn.commit()
-        query_patient_doc = f"""INSERT INTO `PATIENT-DIAGNOSIS`
-        (`idPATIENT`, `idDIAGNOSIS`, `Start of treatment`, `Is staying`, `idDOCTOR`, `Condition`)
-        VALUES ({p_id}, {get_id(p_diag)}, '{datetime.date.today()}', '{p_stay}', {get_id(p_doc)}, '{p_cond}')
-        """
-        with conn.cursor() as cursor:
-            cursor.execute(query_patient_doc)
-            conn.commit()
-        if p_stay == 'Yes':
-            query_get_dep = f"""SELECT `idDEPARTMENT` FROM `DIAGNOSIS`
-            WHERE `idDIAGNOSIS` = {get_id(p_diag)}"""
-            with conn.cursor() as cursor:
-                cursor.execute(query_get_dep)
-                ((dep_id,),) = cursor.fetchall()
-                conn.commit()
-            query_change_beds = f"""UPDATE `DEPARTMENT`
-            SET `Number of beds` = `Number of beds` - 1
-            WHERE `idDEPARTMENT` = {dep_id}"""
-            with conn.cursor() as cursor:
-                cursor.execute(query_change_beds)
-                conn.commit()
-    except:
-        error_in_data()
-    else:
-        success_message()
 
 
 def add_patient_btn(connection):
@@ -904,7 +902,7 @@ def change_dep_btn_p_chosen(conn, p_box):
         success_message()
 
 
-def change_dep_btn(connection):
+def change_dep_btn(conn):
     window = Tk()
     window.geometry('300x250')
     window.title("Choose patient to change his department")
@@ -959,29 +957,33 @@ def best_doctors(conn):
         file.write(f"Doctor name;Deaths;\n")
 
     docs_query = f"""SELECT idDOCTOR FROM `DOCTOR` WHERE `Ended work` IS NULL"""
+    try:
+        with conn.cursor() as cursor:
+            docs_id = {}
+            cursor.execute(docs_query)
+            records = cursor.fetchall()
+            for val in records:
+                docs_id[val[0]] = 0
 
-    with conn.cursor() as cursor:
-        docs_id = {}
-        cursor.execute(docs_query)
-        records = cursor.fetchall()
-        for val in records:
-            docs_id[val[0]] = 0
+            for doc in docs_id.keys():
+                query_get_dead = f"""SELECT COUNT(*) FROM `PATIENT-DIAGNOSIS`
+                WHERE idDOCTOR = {doc} AND `Condition` = 'Dead'"""
+                cursor.execute(query_get_dead)
+                ((val,),) = cursor.fetchall()
+                docs_id[doc] = int(val)
 
-        for doc in docs_id.keys():
-            query_get_dead = f"""SELECT COUNT(*) FROM `PATIENT-DIAGNOSIS`
-            WHERE idDOCTOR = {doc} AND `Condition` = 'Dead'"""
-            cursor.execute(query_get_dead)
-            ((val,),) = cursor.fetchall()
-            docs_id[doc] = int(val)
-
-        sorted_docs = {k: v for k, v in sorted(docs_id.items(), key=lambda item: item[1])}
-        for key in sorted_docs.keys():
-            query = f"""SELECT `Full name` FROM `DOCTOR`
-            WHERE idDOCTOR = {key}"""
-            cursor.execute(query)
-            ((name,),) = cursor.fetchall()
-            with open(filename, 'a') as file:
-                file.write(f"{name};{sorted_docs[key]};\n")
+            sorted_docs = {k: v for k, v in sorted(docs_id.items(), key=lambda item: item[1])}
+            for key in sorted_docs.keys():
+                query = f"""SELECT `Full name` FROM `DOCTOR`
+                WHERE idDOCTOR = {key}"""
+                cursor.execute(query)
+                ((name,),) = cursor.fetchall()
+                with open(filename, 'a') as file:
+                    file.write(f"{name};{sorted_docs[key]};\n")
+    except:
+        error_in_data()
+    else:
+        success_message()
 
 
 def diagnosis_frequency(conn, start_date, end_date):
@@ -995,15 +997,19 @@ def diagnosis_frequency(conn, start_date, end_date):
     diags = {}
     for tuple in digs_tuple:
         diags[tuple[0]] = tuple[1]
-
-    with conn.cursor() as cursor:
-        for diag in diags.keys():
-            query = f"""SELECT COUNT(*) FROM `PATIENT-DIAGNOSIS`
-            WHERE idDIAGNOSIS = {diag} AND `Start of treatment` BETWEEN '{start_date}' AND '{end_date}'"""
-            cursor.execute(query)
-            ((freq,),) = cursor.fetchall()
-            with open(filename, 'a') as file:
-                file.write(f"{diags[diag]};{freq};\n")
+    try:
+        with conn.cursor() as cursor:
+            for diag in diags.keys():
+                query = f"""SELECT COUNT(*) FROM `PATIENT-DIAGNOSIS`
+                WHERE idDIAGNOSIS = {diag} AND `Start of treatment` BETWEEN '{start_date}' AND '{end_date}'"""
+                cursor.execute(query)
+                ((freq,),) = cursor.fetchall()
+                with open(filename, 'a') as file:
+                    file.write(f"{diags[diag]};{freq};\n")
+    except:
+        error_in_data()
+    else:
+        success_message()
 
 
 def d_frequency(conn):
@@ -1035,31 +1041,36 @@ def hospital_history_report_all_time(conn):
     query_get_patients = f"""SELECT idPATIENT, `Full name` FROM `PATIENT`"""
     query_get_diagnoses = f"""SELECT idDIAGNOSIS, `Diagnosis name` from `DIAGNOSIS`"""
     query_get_docs = f"""SELECT idDOCTOR, `Full name` FROM `DOCTOR`"""
-    with conn.cursor() as cursor:
-        patients = {}
-        cursor.execute(query_get_patients)
-        records = cursor.fetchall()
-        for val in records:
-            patients[val[0]] = val[1]
+    try:
+        with conn.cursor() as cursor:
+            patients = {}
+            cursor.execute(query_get_patients)
+            records = cursor.fetchall()
+            for val in records:
+                patients[val[0]] = val[1]
 
-        diagnoses = {}
-        cursor.execute(query_get_diagnoses)
-        records = cursor.fetchall()
-        for val in records:
-            diagnoses[val[0]] = val[1]
+            diagnoses = {}
+            cursor.execute(query_get_diagnoses)
+            records = cursor.fetchall()
+            for val in records:
+                diagnoses[val[0]] = val[1]
 
-        doctors = {}
-        cursor.execute(query_get_docs)
-        records = cursor.fetchall()
-        for val in records:
-            doctors[val[0]] = val[1]
+            doctors = {}
+            cursor.execute(query_get_docs)
+            records = cursor.fetchall()
+            for val in records:
+                doctors[val[0]] = val[1]
 
-        cursor.execute(query)
-        records = cursor.fetchall()
-        for val in records:
-            with open(filename,'a') as file:
-                file.write(f"{patients[val[0]]}; {diagnoses[val[1]]}; {val[2]}; {val[3]};"
-                           f"{val[4]}; {doctors[val[5]]}; {val[6]}\n")
+            cursor.execute(query)
+            records = cursor.fetchall()
+            for val in records:
+                with open(filename,'a') as file:
+                    file.write(f"{patients[val[0]]}; {diagnoses[val[1]]}; {val[2]}; {val[3]};"
+                               f"{val[4]}; {doctors[val[5]]}; {val[6]}\n")
+    except:
+        error_in_data()
+    else:
+        success_message()
 
 
 def hospital_history_report_one_year(conn):
@@ -1067,6 +1078,7 @@ def hospital_history_report_one_year(conn):
     with open(filename, 'a') as file:
         file.write(f"Patient name; Diagnosis; Start of treatment; End of treatment; "
                    f"Is staying; Doctor name; Condition;\n")
+
     query = f"""SELECT idPATIENT, idDIAGNOSIS, `Start of treatment`, `End of treatment`, 
         `Is staying`, idDOCTOR, `Condition` FROM `PATIENT-DIAGNOSIS`
     WHERE `Start of treatment` >= {datetime.date.today() - datetime.timedelta(days=365)}
@@ -1075,31 +1087,36 @@ def hospital_history_report_one_year(conn):
     query_get_patients = f"""SELECT idPATIENT, `Full name` FROM `PATIENT`"""
     query_get_diagnoses = f"""SELECT idDIAGNOSIS, `Diagnosis name` from `DIAGNOSIS`"""
     query_get_docs = f"""SELECT idDOCTOR, `Full name` FROM `DOCTOR`"""
-    with conn.cursor() as cursor:
-        patients = {}
-        cursor.execute(query_get_patients)
-        records = cursor.fetchall()
-        for val in records:
-            patients[val[0]] = val[1]
+    try:
+        with conn.cursor() as cursor:
+            patients = {}
+            cursor.execute(query_get_patients)
+            records = cursor.fetchall()
+            for val in records:
+                patients[val[0]] = val[1]
 
-        diagnoses = {}
-        cursor.execute(query_get_diagnoses)
-        records = cursor.fetchall()
-        for val in records:
-            diagnoses[val[0]] = val[1]
+            diagnoses = {}
+            cursor.execute(query_get_diagnoses)
+            records = cursor.fetchall()
+            for val in records:
+                diagnoses[val[0]] = val[1]
 
-        doctors = {}
-        cursor.execute(query_get_docs)
-        records = cursor.fetchall()
-        for val in records:
-            doctors[val[0]] = val[1]
+            doctors = {}
+            cursor.execute(query_get_docs)
+            records = cursor.fetchall()
+            for val in records:
+                doctors[val[0]] = val[1]
 
-        cursor.execute(query)
-        records = cursor.fetchall()
-        for val in records:
-            with open(filename, 'a') as file:
-                file.write(f"{patients[val[0]]}; {diagnoses[val[1]]}; {val[2]}; {val[3]};"
-                           f"{val[4]}; {doctors[val[5]]}; {val[6]}\n")
+            cursor.execute(query)
+            records = cursor.fetchall()
+            for val in records:
+                with open(filename, 'a') as file:
+                    file.write(f"{patients[val[0]]}; {diagnoses[val[1]]}; {val[2]}; {val[3]};"
+                               f"{val[4]}; {doctors[val[5]]}; {val[6]}\n")
+    except:
+        error_in_data()
+    else:
+        success_message()
 
 
 def hospital_history(conn):
