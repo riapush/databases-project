@@ -486,11 +486,12 @@ def change_meds_btn_clicked(conn, p_box, diag_box, meds_box):
 
         if exists > 0:
             query = f"""UPDATE `PATIENT-MEDICINE`
-            SET `Total dose` = {total_dose}
+            SET `Total dose` = {total_dose},
+                `Is taking?` = 1
             WHERE `idPATIENT` = {get_id(p_name)} AND `idMEDICINE` = {med_id}"""
         else:
-            query = f"""INSERT INTO `PATIENT-MEDICINE` (idPATIENT, idMEDICINE, `Total dose`)
-            VALUES ({get_id(p_name)}, {med_id}, {total_dose})
+            query = f"""INSERT INTO `PATIENT-MEDICINE` (idPATIENT, idMEDICINE, `Total dose`, `Is taking?`)
+            VALUES ({get_id(p_name)}, {med_id}, {total_dose}, 1)
             """
         with conn.cursor(buffered=True) as cursor:
             cursor.execute(query)
@@ -508,6 +509,60 @@ def change_meds_btn_clicked(conn, p_box, diag_box, meds_box):
         success_message()
 
 
+def cancel_meds_btn(conn, p_box, diag_box, meds):
+    med = meds.get()
+    diag = diag_box.get()
+    p_name = p_box.get()
+    query_get_med_id = f"""SELECT idMEDICINE FROM `MEDICINE`
+            WHERE `Medicine name` = '{med}'"""
+    with conn.cursor(buffered=True) as cursor:
+        cursor.execute(query_get_med_id)
+        ((med_id,),) = cursor.fetchall()
+    query_get_diag_id = f"""SELECT idDIAGNOSIS FROM `DIAGNOSIS`
+                WHERE `Diagnosis name` = '{diag}'"""
+    with conn.cursor(buffered=True) as cursor:
+        cursor.execute(query_get_diag_id)
+        ((diag_id,),) = cursor.fetchall()
+
+    query_get_dose = f"""SELECT `Dosage` FROM `MEDICINE-DIAGNOSIS`
+            WHERE `idMEDICINE` = {med_id} AND `idDIAGNOSIS` = {diag_id}"""
+    with conn.cursor(buffered=True) as cursor:
+        cursor.execute(query_get_dose)
+        ((dose,),) = cursor.fetchall()
+
+    query_get_total_dose = f"""SELECT COUNT(*) FROM `PATIENT-MEDICINE`
+            WHERE `idPATIENT` = {get_id(p_name)} AND `idMEDICINE` = {med_id}"""
+    with conn.cursor(buffered=True) as cursor:
+        cursor.execute(query_get_total_dose)
+        ((total_dose,),) = cursor.fetchall()
+        if total_dose > 0:
+            query_get_total_dose = f"""SELECT `Total dose` FROM `PATIENT-MEDICINE`
+                        WHERE `idPATIENT` = {get_id(p_name)} AND `idMEDICINE` = {med_id}"""
+            cursor.execute(query_get_total_dose)
+            ((total_dose,),) = cursor.fetchall()
+        else:
+            return
+
+    total_dose -= dose
+    if total_dose <= 0:
+        query_not_taking = f"""UPDATE `PATIENT-MEDICINE`
+        SET `Is taking?` = 0,
+        `Total dose` = 0
+        WHERE idPATIENT = {get_id(p_name)} AND idMEDICINE = {med_id}"""
+        with conn.cursor() as cursor:
+            cursor.execute(query_not_taking)
+            conn.commit()
+    else:
+        query_taking = f"""UPDATE `PATIENT-MEDICINE`
+                SET `Total dose` = {total_dose}
+                WHERE idPATIENT = {get_id(p_name)} AND idMEDICINE = {med_id}"""
+        with conn.cursor() as cursor:
+            cursor.execute(query_taking)
+            conn.commit()
+
+
+
+
 def change_meds_btn(conn, p_box, diag_box):
     p_diag = diag_box.get()
     window = Tk()
@@ -523,6 +578,12 @@ def change_meds_btn(conn, p_box, diag_box):
     change_meds_btn_clicked_wo_arg = partial(change_meds_btn_clicked, conn, p_box, diag_box, meds)
     btn1 = Button(window, text='Change meds', command=change_meds_btn_clicked_wo_arg)
     btn1.grid(column=0, row=1)
+
+    cancel_meds_btn_wo_arg = partial(cancel_meds_btn, conn, p_box, diag_box, meds)
+    btn3 = Button(window, text='Cancel meds', command=cancel_meds_btn_wo_arg)
+    btn3.grid(column=0, row=4)
+
+
 
 
 def change_procedures_btn_clicked(conn, p_box, diag_box, procedures_box):
@@ -645,8 +706,9 @@ def change_treats_btn_p_chosen(conn, p_box):
         btn1.grid(column=0, row=2)
 
         change_procedures_btn_wo_arg = partial(change_procedures_btn, conn, p_box, diag_box)
-        btn1 = Button(window, text='Change procedures', command=change_procedures_btn_wo_arg)
-        btn1.grid(column=0, row=3)
+        btn2 = Button(window, text='Change procedures', command=change_procedures_btn_wo_arg)
+        btn2.grid(column=0, row=3)
+
 
 
 def change_treatment_btn(conn):
